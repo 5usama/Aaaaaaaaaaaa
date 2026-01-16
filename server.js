@@ -8,7 +8,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 3144;
+const PORT = process.env.PORT || 8080;
 
 // ==================== CDN401 CONFIG ====================
 const CDN = 'cdn401.savetube.vip';
