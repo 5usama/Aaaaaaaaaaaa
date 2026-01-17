@@ -8,7 +8,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8000;
 
 // ==================== CDN401 CONFIG ====================
 const CDN = 'cdn401.savetube.vip';
@@ -29,7 +29,7 @@ function decryptData(encryptedText) {
     }
 }
 
-// Get video info from CDN
+// CDN se video info get karo
 async function getCDNVideoInfo(videoUrl) {
     try {
         const headers = {
@@ -54,7 +54,7 @@ async function getCDNVideoInfo(videoUrl) {
     }
 }
 
-// Get download URL from CDN
+// CDN se download URL get karo - YAHAN FIX KIYA HAI
 async function getCDNDownloadUrl(videoId, key, type, quality) {
     try {
         const headers = {
@@ -77,7 +77,30 @@ async function getCDNDownloadUrl(videoId, key, type, quality) {
             { headers, timeout: 15000 }
         );
 
-        return response.data?.data?.downloadUrl || null;
+        let downloadUrl = response.data?.data?.downloadUrl || null;
+        
+        // WHATSAPP VIDEO FORMAT FIX - YE NAYA CODE HAI
+        if (downloadUrl && type === 'video') {
+            // Video ko WhatsApp ke liye compatible banaye
+            // 1. MP4 format ensure karo
+            if (!downloadUrl.toLowerCase().includes('.mp4')) {
+                // Agar URL mein .mp4 nahi hai toh add karo
+                downloadUrl = downloadUrl + '#.mp4';
+            }
+            
+            // 2. YouTube ke proper format mein convert karo
+            downloadUrl = downloadUrl.replace(/\?.*$/, '') + '?format=mp4&type=video/mp4';
+            
+            // 3. WhatsApp video parameters add karo
+            const urlObj = new URL(downloadUrl);
+            urlObj.searchParams.append('vcodec', 'h264');
+            urlObj.searchParams.append('acodec', 'aac');
+            urlObj.searchParams.append('container', 'mp4');
+            downloadUrl = urlObj.toString();
+        }
+        
+        return downloadUrl;
+
     } catch (error) {
         return null;
     }
@@ -85,7 +108,7 @@ async function getCDNDownloadUrl(videoId, key, type, quality) {
 
 // ==================== VIDEO ID EXTRACTION ====================
 function getVideoId(url) {
-    // Clean URL first
+    // Pehle URL saaf karo
     let cleanUrl = url.split('?')[0].split('&')[0];
     
     // Patterns
@@ -109,30 +132,30 @@ function getVideoId(url) {
 // ==================== MAIN FUNCTION ====================
 async function getDirectDownload(query) {
     try {
-        // Step 1: Search YouTube
+        // Step 1: YouTube pe search karo
         const search = await ytSearch(query);
         if (!search.videos || search.videos.length === 0) {
-            throw new Error('No videos found');
+            throw new Error('Koi video nahi mila');
         }
 
-        // Get first video
+        // Pehla video lo
         const video = search.videos[0];
         const videoId = video.videoId;
         const videoUrl = video.url;
 
-        // Step 2: Get info from CDN
+        // Step 2: CDN se info lo
         const videoInfo = await getCDNVideoInfo(videoUrl);
         if (!videoInfo) {
-            throw new Error('Could not get video information');
+            throw new Error('Video information nahi mil saka');
         }
 
-        // Step 3: Get 360p video download
+        // Step 3: WhatsApp compatible video download lo
         const video360 = await getCDNDownloadUrl(videoInfo.id, videoInfo.key, 'video', '360');
         
-        // Step 4: Get 256kbps audio download
+        // Step 4: Audio download lo
         const audio256 = await getCDNDownloadUrl(videoInfo.id, videoInfo.key, 'audio', '256');
         
-        // If 256 not available, try 192
+        // Agar 256 nahi mila toh 192 try karo
         let audioLink = audio256;
         if (!audio256) {
             audioLink = await getCDNDownloadUrl(videoInfo.id, videoInfo.key, 'audio', '192');
@@ -141,12 +164,12 @@ async function getDirectDownload(query) {
             audioLink = await getCDNDownloadUrl(videoInfo.id, videoInfo.key, 'audio', '128');
         }
 
-        // Check if we got at least one link
+        // Check karo ke koi link mila ya nahi
         if (!video360 && !audioLink) {
-            throw new Error('Could not get download links');
+            throw new Error('Download links nahi mil sake');
         }
 
-        // Prepare response
+        // Response taiyar karo
         const response = {
             success: true,
             query: query,
@@ -162,17 +185,20 @@ async function getDirectDownload(query) {
             downloads: {}
         };
 
-        // Add video download if available
+        // Video download add karo agar available hai
         if (video360) {
             response.downloads.video_360p = video360;
+            // WhatsApp ke liye special link
+            response.downloads.whatsapp_video = video360.replace(/#\.mp4\?/, '?') + '&whatsapp=true';
         }
 
-        // Add audio download if available
+        // Audio download add karo agar available hai
         if (audioLink) {
             response.downloads.audio = audioLink;
+            response.downloads.whatsapp_audio = audioLink + '&type=audio/mpeg';
         }
 
-        // Add developer name
+        // Developer name add karo
         response.developer = 'USAMA DHUDDI';
 
         return response;
@@ -208,7 +234,7 @@ app.get('/api', async (req, res) => {
     if (!query || query.trim() === '') {
         return res.json({
             success: false,
-            error: 'Query parameter is required',
+            error: 'Query parameter zaroori hai',
             example: '/api?query=barota',
             developer: 'USAMA DHUDDI'
         });
@@ -224,7 +250,7 @@ app.get('/search', async (req, res) => {
     if (!q) {
         return res.json({
             success: false,
-            error: 'Use q parameter',
+            error: 'q parameter use karo',
             example: '/search?q=barota',
             developer: 'USAMA DHUDDI'
         });
@@ -240,7 +266,7 @@ app.get('/dl', async (req, res) => {
     if (!query) {
         return res.json({
             success: false,
-            error: 'Add query parameter',
+            error: 'Query parameter add karo',
             developer: 'USAMA DHUDDI'
         });
     }
@@ -253,6 +279,7 @@ app.get('/dl', async (req, res) => {
             success: true,
             title: result.video.title,
             download: result.downloads.video_360p,
+            whatsapp_download: result.downloads.whatsapp_video,
             developer: 'USAMA DHUDDI'
         });
     } else {
